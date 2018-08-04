@@ -552,10 +552,9 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	if ds.SnapshotOptions != nil {
-		d.Set("snapshot_options", map[string]interface{}{
-			"automated_snapshot_start_hour": int(aws.Int64Value(ds.SnapshotOptions.AutomatedSnapshotStartHour)),
-		})
+	err = d.Set("snapshot_options", flattenESSnapshotOptions(ds.SnapshotOptions))
+	if err != nil {
+		return err
 	}
 	if ds.VPCOptions != nil {
 		err = d.Set("vpc_options", flattenESVPCDerivedInfo(ds.VPCOptions))
