@@ -8,10 +8,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	elasticsearch "github.com/aws/aws-sdk-go/service/elasticsearchservice"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/structure"
@@ -310,7 +308,7 @@ func resourceAwsElasticSearchDomainCreate(d *schema.ResourceData, meta interface
 		DomainName: aws.String(d.Get("domain_name").(string)),
 	})
 	if err == nil {
-		return fmt.Errorf("ElasticSearch domain %q already exists", *resp.DomainStatus.DomainName)
+		return fmt.Errorf("ElasticSearch domain %q already exists", aws.StringValue(resp.DomainStatus.DomainName))
 	}
 
 	input := elasticsearch.CreateElasticsearchDomainInput{
@@ -425,7 +423,7 @@ func resourceAwsElasticSearchDomainCreate(d *schema.ResourceData, meta interface
 		out, err = conn.CreateElasticsearchDomain(&input)
 		if err != nil {
 			if isAWSErr(err, "InvalidTypeException", "Error setting policy") {
-				log.Printf("[DEBUG] Retrying creation of ElasticSearch domain %s", *input.DomainName)
+				log.Printf("[DEBUG] Retrying creation of ElasticSearch domain %s", aws.StringValue(input.DomainName))
 				return resource.RetryableError(err)
 			}
 			if isAWSErr(err, "ValidationException", "enable a service-linked role to give Amazon ES permissions") {
@@ -450,7 +448,8 @@ func resourceAwsElasticSearchDomainCreate(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	d.SetId(*out.DomainStatus.ARN)
+	arn := aws.StringValue(out.DomainStatus.ARN)
+	d.SetId(arn)
 
 	// Whilst the domain is being created, we can initialise the tags.
 	// This should mean that if the creation fails (eg because your token expired
@@ -458,7 +457,7 @@ func resourceAwsElasticSearchDomainCreate(d *schema.ResourceData, meta interface
 	// the resources.
 	tags := tagsFromMapElasticsearchService(d.Get("tags").(map[string]interface{}))
 
-	if err := setTagsElasticsearchService(conn, d, *out.DomainStatus.ARN); err != nil {
+	if err := setTagsElasticsearchService(conn, d, arn); err != nil {
 		return err
 	}
 
@@ -486,7 +485,7 @@ func waitForElasticSearchDomainCreation(conn *elasticsearch.ElasticsearchService
 			return resource.NonRetryableError(err)
 		}
 
-		if !*out.DomainStatus.Processing && (out.DomainStatus.Endpoint != nil || out.DomainStatus.Endpoints != nil) {
+		if !aws.BoolValue(out.DomainStatus.Processing) && (out.DomainStatus.Endpoint != nil || out.DomainStatus.Endpoints != nil) {
 			return nil
 		}
 
@@ -502,8 +501,8 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 		DomainName: aws.String(d.Get("domain_name").(string)),
 	})
 	if err != nil {
-		if ec2err, ok := err.(awserr.Error); ok && ec2err.Code() == "ResourceNotFoundException" {
-			log.Printf("[INFO] ElasticSearch Domain %q not found", d.Get("domain_name").(string))
+		if isAWSErr(err, elasticsearch.ErrCodeResourceNotFoundException, "") {
+			log.Printf("[WARN] ElasticSearch Domain %q not found, removing from state", d.Get("domain_name").(string))
 			d.SetId("")
 			return nil
 		}
@@ -512,12 +511,18 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Received ElasticSearch domain: %s", out)
 
+	if out == nil || out.DomainStatus == nil {
+		log.Printf("[WARN] ElasticSearch Domain %q not found, removing from state", d.Get("domain_name").(string))
+		d.SetId("")
+		return nil
+	}
+
 	ds := out.DomainStatus
 
-	if ds.AccessPolicies != nil && *ds.AccessPolicies != "" {
-		policies, err := structure.NormalizeJsonString(*ds.AccessPolicies)
+	if aws.StringValue(ds.AccessPolicies) != "" {
+		policies, err := structure.NormalizeJsonString(aws.StringValue(ds.AccessPolicies))
 		if err != nil {
-			return errwrap.Wrapf("access policies contain an invalid JSON: {{err}}", err)
+			return fmt.Errorf("access policies contain an invalid JSON: %s", err)
 		}
 		d.Set("access_policies", policies)
 	}
@@ -525,7 +530,8 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	d.SetId(*ds.ARN)
+	// d.SetId() is also here due to import
+	d.SetId(aws.StringValue(ds.ARN))
 	d.Set("domain_id", ds.DomainId)
 	d.Set("domain_name", ds.DomainName)
 	d.Set("elasticsearch_version", ds.ElasticsearchVersion)
@@ -548,7 +554,7 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 	}
 	if ds.SnapshotOptions != nil {
 		d.Set("snapshot_options", map[string]interface{}{
-			"automated_snapshot_start_hour": *ds.SnapshotOptions.AutomatedSnapshotStartHour,
+			"automated_snapshot_start_hour": int(aws.Int64Value(ds.SnapshotOptions.AutomatedSnapshotStartHour)),
 		})
 	}
 	if ds.VPCOptions != nil {
@@ -567,7 +573,7 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 		}
 	} else {
 		if ds.Endpoint != nil {
-			d.Set("endpoint", *ds.Endpoint)
+			d.Set("endpoint", aws.StringValue(ds.Endpoint))
 			d.Set("kibana_endpoint", getKibanaEndpoint(d))
 		}
 		if ds.Endpoints != nil {
@@ -581,9 +587,9 @@ func resourceAwsElasticSearchDomainRead(d *schema.ResourceData, meta interface{}
 			mm := map[string]interface{}{}
 			mm["log_type"] = k
 			if val.CloudWatchLogsLogGroupArn != nil {
-				mm["cloudwatch_log_group_arn"] = *val.CloudWatchLogsLogGroupArn
+				mm["cloudwatch_log_group_arn"] = aws.StringValue(val.CloudWatchLogsLogGroupArn)
 			}
-			mm["enabled"] = *val.Enabled
+			mm["enabled"] = aws.BoolValue(val.Enabled)
 			m = append(m, mm)
 		}
 		d.Set("log_publishing_options", m)
@@ -706,7 +712,7 @@ func resourceAwsElasticSearchDomainUpdate(d *schema.ResourceData, meta interface
 			return resource.NonRetryableError(err)
 		}
 
-		if *out.DomainStatus.Processing == false {
+		if !aws.BoolValue(out.DomainStatus.Processing) {
 			return nil
 		}
 

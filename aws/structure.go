@@ -1067,22 +1067,22 @@ func flattenESClusterConfig(c *elasticsearch.ElasticsearchClusterConfig) []map[s
 	m := map[string]interface{}{}
 
 	if c.DedicatedMasterCount != nil {
-		m["dedicated_master_count"] = *c.DedicatedMasterCount
+		m["dedicated_master_count"] = int(aws.Int64Value(c.DedicatedMasterCount))
 	}
 	if c.DedicatedMasterEnabled != nil {
-		m["dedicated_master_enabled"] = *c.DedicatedMasterEnabled
+		m["dedicated_master_enabled"] = aws.BoolValue(c.DedicatedMasterEnabled)
 	}
 	if c.DedicatedMasterType != nil {
-		m["dedicated_master_type"] = *c.DedicatedMasterType
+		m["dedicated_master_type"] = aws.StringValue(c.DedicatedMasterType)
 	}
 	if c.InstanceCount != nil {
-		m["instance_count"] = *c.InstanceCount
+		m["instance_count"] = int(aws.Int64Value(c.InstanceCount))
 	}
 	if c.InstanceType != nil {
-		m["instance_type"] = *c.InstanceType
+		m["instance_type"] = aws.StringValue(c.InstanceType)
 	}
 	if c.ZoneAwarenessEnabled != nil {
-		m["zone_awareness_enabled"] = *c.ZoneAwarenessEnabled
+		m["zone_awareness_enabled"] = aws.BoolValue(c.ZoneAwarenessEnabled)
 	}
 
 	return []map[string]interface{}{m}
@@ -1136,18 +1136,18 @@ func flattenESEBSOptions(o *elasticsearch.EBSOptions) []map[string]interface{} {
 	m := map[string]interface{}{}
 
 	if o.EBSEnabled != nil {
-		m["ebs_enabled"] = *o.EBSEnabled
+		m["ebs_enabled"] = aws.BoolValue(o.EBSEnabled)
 	}
 
 	if aws.BoolValue(o.EBSEnabled) {
 		if o.Iops != nil {
-			m["iops"] = *o.Iops
+			m["iops"] = int(aws.Int64Value(o.Iops))
 		}
 		if o.VolumeSize != nil {
-			m["volume_size"] = *o.VolumeSize
+			m["volume_size"] = int(aws.Int64Value(o.VolumeSize))
 		}
 		if o.VolumeType != nil {
-			m["volume_type"] = *o.VolumeType
+			m["volume_type"] = aws.StringValue(o.VolumeType)
 		}
 	}
 
@@ -1184,10 +1184,10 @@ func flattenESEncryptAtRestOptions(o *elasticsearch.EncryptionAtRestOptions) []m
 	m := map[string]interface{}{}
 
 	if o.Enabled != nil {
-		m["enabled"] = *o.Enabled
+		m["enabled"] = aws.BoolValue(o.Enabled)
 	}
 	if o.KmsKeyId != nil {
-		m["kms_key_id"] = *o.KmsKeyId
+		m["kms_key_id"] = aws.StringValue(o.KmsKeyId)
 	}
 
 	return []map[string]interface{}{m}
@@ -1219,7 +1219,7 @@ func flattenESVPCDerivedInfo(o *elasticsearch.VPCDerivedInfo) []map[string]inter
 		m["subnet_ids"] = schema.NewSet(schema.HashString, flattenStringList(o.SubnetIds))
 	}
 	if o.VPCId != nil {
-		m["vpc_id"] = *o.VPCId
+		m["vpc_id"] = aws.StringValue(o.VPCId)
 	}
 
 	return []map[string]interface{}{m}
