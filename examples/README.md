@@ -6,7 +6,7 @@ on what the example does.
 
 To run any example, clone the repository and run `terraform apply` within
 the example's own directory.
-
+this is extra line
 For example:
 
 ```
